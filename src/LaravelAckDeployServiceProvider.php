@@ -5,6 +5,7 @@ namespace Algethamy\LaravelAckDeploy;
 use Algethamy\LaravelAckDeploy\Console\Commands\AckInitCommand;
 use Algethamy\LaravelAckDeploy\Console\Commands\AckDeployCommand;
 use Algethamy\LaravelAckDeploy\Console\Commands\AckBuildCommand;
+use Algethamy\LaravelAckDeploy\Console\Commands\AckKubeconfigCommand;
 use Illuminate\Support\ServiceProvider;
 
 class LaravelAckDeployServiceProvider extends ServiceProvider
@@ -19,6 +20,7 @@ class LaravelAckDeployServiceProvider extends ServiceProvider
                 AckInitCommand::class,
                 AckDeployCommand::class,
                 AckBuildCommand::class,
+                AckKubeconfigCommand::class,
             ]);
 
             $this->publishes([

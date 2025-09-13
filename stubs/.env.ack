@@ -6,6 +6,11 @@ DOCKER_REGISTRY={{ REGISTRY }}
 K8S_NAMESPACE={{ NAMESPACE }}
 DOMAIN={{ DOMAIN }}
 
+# ACK Cluster Configuration
+# Get these values from ACK Console → Clusters → Your Cluster → Basic Information
+ACK_CLUSTER_ID=
+ACK_REGION=me-central-1
+
 # Laravel Environment (for production deployment)
 APP_ENV=production
 APP_DEBUG=false

@@ -39,8 +39,9 @@ class AckInitCommand extends Command
         $this->newLine();
         $this->info('Next steps:');
         $this->line('1. Review and customize the generated files');
-        $this->line('2. Build your Docker image: php artisan ack:build --push');
-        $this->line('3. Deploy to ACK: php artisan ack:deploy --build --wait');
+        $this->line('2. Setup kubectl for ACK: php artisan ack:kubeconfig');
+        $this->line('3. Build your Docker image: php artisan ack:build --push');
+        $this->line('4. Deploy to ACK: php artisan ack:deploy --build --wait');
 
         return self::SUCCESS;
     }

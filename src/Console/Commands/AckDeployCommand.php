@@ -84,11 +84,17 @@ class AckDeployCommand extends Command
 
     private function checkKubectl(): bool
     {
+        // Check if kubectl is installed
         $process = new Process(['kubectl', 'version', '--client']);
         $process->run();
 
         if (!$process->isSuccessful()) {
             $this->error('kubectl is not installed or not accessible');
+            $this->newLine();
+            $this->info('Install kubectl:');
+            $this->line('• macOS: brew install kubectl');
+            $this->line('• Linux: curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"');
+            $this->line('• Windows: choco install kubernetes-cli');
             return false;
         }
 
@@ -97,12 +103,158 @@ class AckDeployCommand extends Command
         $process->run();
 
         if (!$process->isSuccessful()) {
-            $this->error('Cannot connect to Kubernetes cluster. Check your kubeconfig.');
+            $this->error('Cannot connect to Kubernetes cluster.');
+            $this->newLine();
+            $this->info('🔧 Kubeconfig Setup Options:');
+            
+            // Check if we can auto-detect ACK cluster
+            if ($this->attemptAckKubeconfigSetup()) {
+                // Try again after setup
+                $process = new Process(['kubectl', 'cluster-info']);
+                $process->run();
+                
+                if ($process->isSuccessful()) {
+                    $this->info('✅ Successfully connected to ACK cluster');
+                    return true;
+                }
+            }
+            
+            $this->newLine();
+            $this->info('Manual setup options:');
+            $this->line('1. Download kubeconfig from ACK Console:');
+            $this->line('   • Go to Container Service → Clusters → Your Cluster → Connection Information');
+            $this->line('   • Download kubeconfig and save as ~/.kube/config');
+            $this->newLine();
+            $this->line('2. Or set KUBECONFIG environment variable:');
+            $this->line('   export KUBECONFIG=/path/to/your/kubeconfig');
+            $this->newLine();
+            $this->line('3. Or use Alibaba Cloud CLI:');
+            $this->line('   aliyun cs GET /k8s/{cluster-id}/user_config --region {region}');
+            
             return false;
         }
 
-        $this->info('kubectl connectivity confirmed');
+        $this->info('✅ kubectl connectivity confirmed');
         return true;
+    }
+
+    private function attemptAckKubeconfigSetup(): bool
+    {
+        $this->info('🔍 Attempting automatic ACK kubeconfig setup...');
+        
+        // Check if aliyun CLI is available
+        $process = new Process(['aliyun', 'version']);
+        $process->run();
+        
+        if (!$process->isSuccessful()) {
+            $this->warn('Alibaba Cloud CLI not found. Install with: pip install aliyun-cli');
+            return false;
+        }
+        
+        // Try to detect cluster ID from environment or ask user
+        $clusterId = $this->getClusterIdFromEnv();
+        $region = $this->getRegionFromEnv();
+        
+        if (!$clusterId || !$region) {
+            if ($this->confirm('Would you like to configure ACK cluster connection now?')) {
+                $clusterId = $this->ask('Enter your ACK Cluster ID');
+                $region = $this->ask('Enter your ACK Region', 'me-central-1');
+                
+                if ($clusterId && $region) {
+                    $this->saveClusterConfig($clusterId, $region);
+                }
+            } else {
+                return false;
+            }
+        }
+        
+        if (!$clusterId || !$region) {
+            return false;
+        }
+        
+        // Get kubeconfig using aliyun CLI
+        $this->info("Getting kubeconfig for cluster: {$clusterId}");
+        
+        $process = new Process([
+            'aliyun', 'cs', 'GET', "/k8s/{$clusterId}/user_config", '--region', $region
+        ]);
+        
+        $process->run();
+        
+        if (!$process->isSuccessful()) {
+            $this->warn('Failed to get kubeconfig from Alibaba Cloud. Check your aliyun CLI configuration.');
+            return false;
+        }
+        
+        $kubeconfig = $process->getOutput();
+        
+        // Save kubeconfig
+        $kubeconfigPath = $_SERVER['HOME'] . '/.kube/config';
+        $kubeconfigDir = dirname($kubeconfigPath);
+        
+        if (!is_dir($kubeconfigDir)) {
+            mkdir($kubeconfigDir, 0700, true);
+        }
+        
+        file_put_contents($kubeconfigPath, $kubeconfig);
+        chmod($kubeconfigPath, 0600);
+        
+        $this->info("✅ Kubeconfig saved to: {$kubeconfigPath}");
+        return true;
+    }
+    
+    private function getClusterIdFromEnv(): ?string
+    {
+        // Check .env.ack file first
+        if (file_exists(base_path('.env.ack'))) {
+            $envContent = file_get_contents(base_path('.env.ack'));
+            if (preg_match('/^ACK_CLUSTER_ID=(.+)$/m', $envContent, $matches)) {
+                $clusterId = trim($matches[1], '"\'');
+                if ($clusterId) {
+                    return $clusterId;
+                }
+            }
+        }
+        
+        return env('ACK_CLUSTER_ID');
+    }
+    
+    private function getRegionFromEnv(): ?string
+    {
+        // Check .env.ack file first
+        if (file_exists(base_path('.env.ack'))) {
+            $envContent = file_get_contents(base_path('.env.ack'));
+            if (preg_match('/^ACK_REGION=(.+)$/m', $envContent, $matches)) {
+                $region = trim($matches[1], '"\'');
+                if ($region) {
+                    return $region;
+                }
+            }
+        }
+        
+        return env('ACK_REGION', 'me-central-1');
+    }
+    
+    private function saveClusterConfig(string $clusterId, string $region): void
+    {
+        $envAckPath = base_path('.env.ack');
+        $content = '';
+        
+        if (file_exists($envAckPath)) {
+            $content = file_get_contents($envAckPath);
+        }
+        
+        // Add or update cluster configuration
+        if (!str_contains($content, 'ACK_CLUSTER_ID=')) {
+            $content .= "\n# ACK Cluster Configuration\nACK_CLUSTER_ID={$clusterId}\n";
+        }
+        
+        if (!str_contains($content, 'ACK_REGION=')) {
+            $content .= "ACK_REGION={$region}\n";
+        }
+        
+        file_put_contents($envAckPath, $content);
+        $this->info('Cluster configuration saved to .env.ack');
     }
 
     private function createNamespace(string $namespace): bool
