@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.ack
+    ports:
+      - "8080:80"
+    environment:
+      - APP_NAME={{ APP_NAME }}
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/html/database/database.sqlite
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+      - /var/www/html/node_modules
+    networks:
+      - {{ APP_NAME }}-network
+
+networks:
+  {{ APP_NAME }}-network:
+    driver: bridge
