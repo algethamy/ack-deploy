@@ -46,7 +46,7 @@ class AckBuildCommand extends Command
     private function getConfiguration(): array
     {
         $registry = $this->option('registry') ?: $this->getRegistryFromEnv();
-        $appName = $this->getAppNameFromEnv();
+        $appName = strtolower($this->getAppNameFromEnv()); // Ensure lowercase for Docker
         $tag = $this->option('tag');
 
         return [
@@ -122,11 +122,33 @@ class AckBuildCommand extends Command
 
     private function getRegistryFromEnv(): string
     {
-        return env('DOCKER_REGISTRY', 'registry.me-central-1.aliyuncs.com');
+        // Check multiple sources for registry configuration
+        $registry = env('DOCKER_REGISTRY');
+        
+        if (!$registry && file_exists(base_path('.env.ack'))) {
+            // Try to read from .env.ack file
+            $envContent = file_get_contents(base_path('.env.ack'));
+            if (preg_match('/DOCKER_REGISTRY=(.+)/', $envContent, $matches)) {
+                $registry = trim($matches[1]);
+            }
+        }
+        
+        return $registry ?: 'registry.me-central-1.aliyuncs.com';
     }
 
     private function getAppNameFromEnv(): string
     {
-        return env('APP_NAME', basename(base_path()));
+        // Check multiple sources for app name
+        $appName = env('APP_NAME');
+        
+        if (!$appName && file_exists(base_path('.env.ack'))) {
+            // Try to read from .env.ack file
+            $envContent = file_get_contents(base_path('.env.ack'));
+            if (preg_match('/APP_NAME=(.+)/', $envContent, $matches)) {
+                $appName = trim($matches[1]);
+            }
+        }
+        
+        return $appName ?: basename(base_path());
     }
 }

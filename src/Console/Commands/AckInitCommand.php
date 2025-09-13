@@ -47,9 +47,15 @@ class AckInitCommand extends Command
 
     private function gatherConfiguration(): array
     {
+        $appName = $this->option('app-name') ?: $this->ask('Application name', basename(base_path()));
+        $registry = $this->option('registry') ?: $this->ask('Docker registry', 'registry.me-central-1.aliyuncs.com');
+        
+        // Normalize registry formats
+        $registry = $this->normalizeRegistry($registry);
+        
         return [
-            'app_name' => $this->option('app-name') ?: $this->ask('Application name', basename(base_path())),
-            'registry' => $this->option('registry') ?: $this->ask('Docker registry', 'registry.me-central-1.aliyuncs.com'),
+            'app_name' => strtolower($appName), // Ensure lowercase for Docker compatibility
+            'registry' => $registry,
             'namespace' => $this->option('namespace') ?: $this->ask('Kubernetes namespace', 'default'),
             'domain' => $this->option('domain') ?: $this->ask('Application domain (optional)', ''),
         ];
@@ -169,5 +175,18 @@ class AckInitCommand extends Command
         ];
 
         return str_replace(array_keys($placeholders), array_values($placeholders), $content);
+    }
+
+    private function normalizeRegistry(string $registry): string
+    {
+        // Handle Docker Hub variations
+        if (in_array(strtolower($registry), ['docker.io', 'hub.docker.com', 'docker.com', 'dockerhub'])) {
+            return 'docker.io'; // Docker Hub official registry
+        }
+
+        // Remove any protocol prefixes
+        $registry = preg_replace('/^https?:\/\//', '', $registry);
+        
+        return $registry;
     }
 }
