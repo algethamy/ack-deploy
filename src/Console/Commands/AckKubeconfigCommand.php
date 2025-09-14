@@ -7,10 +7,11 @@ use Symfony\Component\Process\Process;
 
 class AckKubeconfigCommand extends Command
 {
-    protected $signature = 'ack:kubeconfig 
+    protected $signature = 'ack:kubeconfig
                            {--cluster-id= : ACK Cluster ID}
                            {--region= : ACK Region}
-                           {--save : Save cluster config to .env.ack}';
+                           {--save : Save cluster config to .env.ack}
+                           {--local : Save kubeconfig to project directory instead of global}';
 
     protected $description = 'Setup kubectl configuration for ACK cluster';
 
@@ -113,20 +114,27 @@ class AckKubeconfigCommand extends Command
 
         $kubeconfig = $process->getOutput();
 
-        // Create .kube directory if it doesn't exist
-        $kubeconfigPath = $_SERVER['HOME'] . '/.kube/config';
-        $kubeconfigDir = dirname($kubeconfigPath);
+        // Determine kubeconfig path (local vs global)
+        $useLocal = $this->option('local') || $this->confirm('Save kubeconfig to project directory? (Recommended for project isolation)', true);
 
-        if (!is_dir($kubeconfigDir)) {
-            mkdir($kubeconfigDir, 0700, true);
-            $this->info("Created directory: {$kubeconfigDir}");
-        }
+        if ($useLocal) {
+            $kubeconfigPath = base_path('kubeconfig.yaml');
+            $this->info("💡 Using project-specific kubeconfig");
+        } else {
+            $kubeconfigPath = $_SERVER['HOME'] . '/.kube/config';
+            $kubeconfigDir = dirname($kubeconfigPath);
 
-        // Backup existing kubeconfig
-        if (file_exists($kubeconfigPath)) {
-            $backupPath = $kubeconfigPath . '.backup.' . date('Y-m-d-H-i-s');
-            copy($kubeconfigPath, $backupPath);
-            $this->info("📁 Backed up existing kubeconfig to: {$backupPath}");
+            if (!is_dir($kubeconfigDir)) {
+                mkdir($kubeconfigDir, 0700, true);
+                $this->info("Created directory: {$kubeconfigDir}");
+            }
+
+            // Backup existing global kubeconfig
+            if (file_exists($kubeconfigPath)) {
+                $backupPath = $kubeconfigPath . '.backup.' . date('Y-m-d-H-i-s');
+                copy($kubeconfigPath, $backupPath);
+                $this->info("📁 Backed up existing kubeconfig to: {$backupPath}");
+            }
         }
 
         // Save kubeconfig
@@ -134,6 +142,12 @@ class AckKubeconfigCommand extends Command
         chmod($kubeconfigPath, 0600);
 
         $this->info("✅ Kubeconfig saved to: {$kubeconfigPath}");
+
+        // Add to .gitignore if local
+        if ($useLocal) {
+            $this->addToGitignore('kubeconfig.yaml');
+        }
+
         return true;
     }
 
@@ -141,7 +155,16 @@ class AckKubeconfigCommand extends Command
     {
         $this->info('🔍 Verifying kubectl connectivity...');
 
-        $process = new Process(['kubectl', 'cluster-info']);
+        // Use local kubeconfig if it exists
+        $kubeconfigPath = base_path('kubeconfig.yaml');
+        $command = ['kubectl', 'cluster-info'];
+
+        if (file_exists($kubeconfigPath)) {
+            $command = ['kubectl', '--kubeconfig', $kubeconfigPath, 'cluster-info'];
+            $this->info("Using local kubeconfig: {$kubeconfigPath}");
+        }
+
+        $process = new Process($command);
         $process->run();
 
         if (!$process->isSuccessful()) {
@@ -217,5 +240,26 @@ class AckKubeconfigCommand extends Command
 
         file_put_contents($envAckPath, $content);
         $this->info('💾 Cluster configuration saved to .env.ack');
+    }
+
+    private function addToGitignore(string $filename): void
+    {
+        $gitignorePath = base_path('.gitignore');
+        $pattern = $filename;
+
+        // Check if .gitignore exists and if pattern is already there
+        if (file_exists($gitignorePath)) {
+            $gitignoreContent = file_get_contents($gitignorePath);
+            if (str_contains($gitignoreContent, $pattern)) {
+                return; // Already exists
+            }
+        } else {
+            $gitignoreContent = '';
+        }
+
+        // Add pattern to .gitignore
+        $gitignoreContent .= "\n# ACK kubeconfig\n{$pattern}\n";
+        file_put_contents($gitignorePath, $gitignoreContent);
+        $this->info("📝 Added {$pattern} to .gitignore");
     }
 }

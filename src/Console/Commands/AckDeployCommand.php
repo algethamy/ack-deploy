@@ -2,11 +2,13 @@
 
 namespace Algethamy\LaravelAckDeploy\Console\Commands;
 
+use Algethamy\LaravelAckDeploy\Traits\UsesKubeconfig;
 use Illuminate\Console\Command;
 use Symfony\Component\Process\Process;
 
 class AckDeployCommand extends Command
 {
+    use UsesKubeconfig;
     protected $signature = 'ack:deploy
                            {--namespace= : Kubernetes namespace}
                            {--build : Build and push image before deploying}
@@ -97,7 +99,7 @@ class AckDeployCommand extends Command
     private function checkKubectl(): bool
     {
         // Check if kubectl is installed
-        $process = new Process(['kubectl', 'version', '--client']);
+        $process = new Process($this->getKubectlCommand(['kubectl', 'version', '--client']));
         $process->run();
 
         if (!$process->isSuccessful()) {
@@ -111,7 +113,7 @@ class AckDeployCommand extends Command
         }
 
         // Check cluster connectivity
-        $process = new Process(['kubectl', 'cluster-info']);
+        $process = new Process($this->getKubectlCommand(['kubectl', 'cluster-info']));
         $process->run();
 
         if (!$process->isSuccessful()) {
@@ -122,7 +124,7 @@ class AckDeployCommand extends Command
             // Check if we can auto-detect ACK cluster
             if ($this->attemptAckKubeconfigSetup()) {
                 // Try again after setup
-                $process = new Process(['kubectl', 'cluster-info']);
+                $process = new Process($this->getKubectlCommand(['kubectl', 'cluster-info']));
                 $process->run();
                 
                 if ($process->isSuccessful()) {
@@ -277,15 +279,15 @@ class AckDeployCommand extends Command
 
         $this->info("Creating namespace: {$namespace}");
 
-        $process = new Process([
-            'kubectl', 'create', 'namespace', $namespace, 
+        $process = new Process($this->getKubectlCommand([
+            'kubectl', 'create', 'namespace', $namespace,
             '--dry-run=client', '-o', 'yaml'
-        ]);
+        ]));
 
         $process->run();
         $yaml = $process->getOutput();
 
-        $process = new Process(['kubectl', 'apply', '-f', '-']);
+        $process = new Process($this->getKubectlCommand(['kubectl', 'apply', '-f', '-']));
         $process->setInput($yaml);
         $process->run();
 
