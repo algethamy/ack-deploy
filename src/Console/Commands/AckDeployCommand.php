@@ -59,9 +59,11 @@ class AckDeployCommand extends Command
 
     private function getConfiguration(): array
     {
+        $appName = env('APP_NAME', basename(base_path()));
+
         return [
             'namespace' => $this->option('namespace') ?: env('K8S_NAMESPACE', 'default'),
-            'app_name' => env('APP_NAME', basename(base_path())),
+            'app_name' => $this->sanitizeKubernetesName($appName),
         ];
     }
 
@@ -369,5 +371,31 @@ class AckDeployCommand extends Command
         $this->newLine();
         $this->info('Pod status:');
         $this->line($process->getOutput());
+    }
+
+    private function sanitizeKubernetesName(string $name): string
+    {
+        // Convert to lowercase and replace underscores with hyphens
+        $sanitized = strtolower($name);
+        $sanitized = str_replace('_', '-', $sanitized);
+
+        // Remove any characters that aren't alphanumeric or hyphens
+        $sanitized = preg_replace('/[^a-z0-9-]/', '-', $sanitized);
+
+        // Ensure it starts and ends with alphanumeric character
+        $sanitized = preg_replace('/^-+|-+$/', '', $sanitized);
+        $sanitized = preg_replace('/-+/', '-', $sanitized); // Remove consecutive hyphens
+
+        // Ensure it starts with a letter (required for some K8s resources like services)
+        if (preg_match('/^[0-9]/', $sanitized)) {
+            $sanitized = 'app-' . $sanitized;
+        }
+
+        // If name becomes empty after sanitization, use a default
+        if (empty($sanitized)) {
+            $sanitized = 'laravel-app';
+        }
+
+        return $sanitized;
     }
 }

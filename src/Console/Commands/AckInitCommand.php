@@ -55,7 +55,7 @@ class AckInitCommand extends Command
         $registry = $this->normalizeRegistry($registry);
         
         return [
-            'app_name' => strtolower($appName), // Ensure lowercase for Docker compatibility
+            'app_name' => $this->sanitizeKubernetesName($appName),
             'registry' => $registry,
             'namespace' => $this->option('namespace') ?: $this->ask('Kubernetes namespace', 'default'),
             'domain' => $this->option('domain') ?: $this->ask('Application domain (optional)', ''),
@@ -187,7 +187,33 @@ class AckInitCommand extends Command
 
         // Remove any protocol prefixes
         $registry = preg_replace('/^https?:\/\//', '', $registry);
-        
+
         return $registry;
+    }
+
+    private function sanitizeKubernetesName(string $name): string
+    {
+        // Convert to lowercase and replace underscores with hyphens
+        $sanitized = strtolower($name);
+        $sanitized = str_replace('_', '-', $sanitized);
+
+        // Remove any characters that aren't alphanumeric or hyphens
+        $sanitized = preg_replace('/[^a-z0-9-]/', '-', $sanitized);
+
+        // Ensure it starts and ends with alphanumeric character
+        $sanitized = preg_replace('/^-+|-+$/', '', $sanitized);
+        $sanitized = preg_replace('/-+/', '-', $sanitized); // Remove consecutive hyphens
+
+        // Ensure it starts with a letter (required for some K8s resources like services)
+        if (preg_match('/^[0-9]/', $sanitized)) {
+            $sanitized = 'app-' . $sanitized;
+        }
+
+        // If name becomes empty after sanitization, use a default
+        if (empty($sanitized)) {
+            $sanitized = 'laravel-app';
+        }
+
+        return $sanitized;
     }
 }
