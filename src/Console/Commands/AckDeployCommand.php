@@ -385,22 +385,42 @@ class AckDeployCommand extends Command
         $deploymentName = "{$config['app_name']}-app";
         $namespace = $config['namespace'];
 
-        // Check if deployment exists and has ImagePullBackOff pods
+        $this->info("🔍 Checking for deployment issues: {$deploymentName}");
+
+        // First check if deployment exists
         $process = new Process([
-            'kubectl', 'get', 'pods', '-l', "app={$deploymentName}", '-n', $namespace,
-            '-o', 'jsonpath={.items[*].status.containerStatuses[*].state.waiting.reason}'
+            'kubectl', 'get', 'deployment', $deploymentName, '-n', $namespace
+        ]);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            $this->info("ℹ️  No existing deployment found");
+            return false;
+        }
+
+        // Check pod status for ImagePull errors
+        $process = new Process([
+            'kubectl', 'get', 'pods', '-l', "app={$deploymentName}", '-n', $namespace, '--no-headers'
         ]);
 
         $process->run();
 
         if ($process->isSuccessful()) {
-            $output = $process->getOutput();
+            $output = trim($process->getOutput());
+            $this->info("📋 Current pod status:\n" . $output);
+
             if (str_contains($output, 'ImagePullBackOff') || str_contains($output, 'ErrImagePull')) {
                 $this->warn("🔍 Detected ImagePull errors. Will recreate deployment automatically.");
                 return true;
             }
+
+            if (str_contains($output, 'ContainerCreating') || str_contains($output, 'Pending')) {
+                $this->info("⏳ Pods are still starting up, skipping recreation");
+                return false;
+            }
         }
 
+        $this->info("✅ No deployment recreation needed");
         return false;
     }
 
