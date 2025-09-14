@@ -7,10 +7,11 @@ use Symfony\Component\Process\Process;
 
 class AckDeployCommand extends Command
 {
-    protected $signature = 'ack:deploy 
+    protected $signature = 'ack:deploy
                            {--namespace= : Kubernetes namespace}
                            {--build : Build and push image before deploying}
-                           {--wait : Wait for deployment to be ready}';
+                           {--wait : Wait for deployment to be ready}
+                           {--recreate : Force recreate deployment if it exists}';
 
     protected $description = 'Deploy application to ACK cluster';
 
@@ -37,8 +38,13 @@ class AckDeployCommand extends Command
             return self::FAILURE;
         }
 
+        // Handle existing deployment recreation
+        if ($this->option('recreate') || $this->shouldRecreateDeployment($config)) {
+            $this->recreateDeployment($config);
+        }
+
         // Apply Kubernetes manifests
-        if (!$this->applyManifests($config['namespace'])) {
+        if (!$this->applyManifests($config)) {
             return self::FAILURE;
         }
 
@@ -287,7 +293,7 @@ class AckDeployCommand extends Command
         return true;
     }
 
-    private function applyManifests(string $namespace): bool
+    private function applyManifests(array $config): bool
     {
         if (!is_dir(base_path('k8s'))) {
             $this->error('k8s directory not found. Run: php artisan ack:init');
@@ -297,7 +303,7 @@ class AckDeployCommand extends Command
         $this->info('Applying Kubernetes manifests...');
 
         $process = new Process([
-            'kubectl', 'apply', '-f', 'k8s/', '-n', $namespace
+            'kubectl', 'apply', '-f', 'k8s/', '-n', $config['namespace']
         ], base_path());
 
         $process->run(function ($type, $buffer) {
@@ -372,6 +378,68 @@ class AckDeployCommand extends Command
         $this->newLine();
         $this->info('Pod status:');
         $this->line($process->getOutput());
+    }
+
+    private function shouldRecreateDeployment(array $config): bool
+    {
+        $deploymentName = "{$config['app_name']}-app";
+        $namespace = $config['namespace'];
+
+        // Check if deployment exists and has ImagePullBackOff pods
+        $process = new Process([
+            'kubectl', 'get', 'pods', '-l', "app={$deploymentName}", '-n', $namespace,
+            '-o', 'jsonpath={.items[*].status.containerStatuses[*].state.waiting.reason}'
+        ]);
+
+        $process->run();
+
+        if ($process->isSuccessful()) {
+            $output = $process->getOutput();
+            if (str_contains($output, 'ImagePullBackOff') || str_contains($output, 'ErrImagePull')) {
+                $this->warn("🔍 Detected ImagePull errors. Will recreate deployment automatically.");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function recreateDeployment(array $config): void
+    {
+        $deploymentName = "{$config['app_name']}-app";
+        $namespace = $config['namespace'];
+
+        $this->info("🔄 Checking for existing deployment: {$deploymentName}");
+
+        // Check if deployment exists
+        $process = new Process([
+            'kubectl', 'get', 'deployment', $deploymentName, '-n', $namespace
+        ]);
+
+        $process->run();
+
+        if ($process->isSuccessful()) {
+            $this->warn("⚠️  Existing deployment found. Recreating...");
+
+            // Delete existing deployment
+            $process = new Process([
+                'kubectl', 'delete', 'deployment', $deploymentName, '-n', $namespace, '--wait=true'
+            ]);
+
+            $process->run(function ($type, $buffer) {
+                if (trim($buffer)) {
+                    $this->line("  " . $buffer);
+                }
+            });
+
+            if ($process->isSuccessful()) {
+                $this->info("✅ Deployment deleted successfully");
+            } else {
+                $this->warn("⚠️  Failed to delete deployment (continuing anyway)");
+            }
+        } else {
+            $this->info("ℹ️  No existing deployment found");
+        }
     }
 
     private function sanitizeKubernetesName(string $name): string
