@@ -188,18 +188,27 @@ class AckBuildCommand extends Command
 
     private function sanitizeDockerName(string $name): string
     {
-        // For Docker names, convert underscores to hyphens and ensure lowercase
+        // For Docker names with username format (algethamy/new-ncpd)
+        if (str_contains($name, '/')) {
+            $parts = explode('/', $name, 2);
+            $username = strtolower($parts[0]);
+            $repository = strtolower($parts[1]);
+
+            // Sanitize repository name only (convert underscores to hyphens)
+            $repository = str_replace('_', '-', $repository);
+            $repository = preg_replace('/[^a-z0-9-]/', '-', $repository);
+            $repository = preg_replace('/-+/', '-', $repository);
+            $repository = trim($repository, '-');
+
+            return "{$username}/{$repository}";
+        }
+
+        // For simple names without username
         $sanitized = strtolower($name);
         $sanitized = str_replace('_', '-', $sanitized);
-
-        // Remove any characters that aren't alphanumeric, hyphens, or slashes (for usernames)
-        $sanitized = preg_replace('/[^a-z0-9-\/]/', '-', $sanitized);
-
-        // Clean up consecutive hyphens
+        $sanitized = preg_replace('/[^a-z0-9-]/', '-', $sanitized);
         $sanitized = preg_replace('/-+/', '-', $sanitized);
-
-        // Remove leading/trailing hyphens (but preserve slashes for Docker Hub usernames)
-        $sanitized = preg_replace('/^-+|-+$/', '', $sanitized);
+        $sanitized = trim($sanitized, '-');
 
         return $sanitized ?: 'laravel-app';
     }
