@@ -59,10 +59,11 @@ class AckDeployCommand extends Command
 
     private function getConfiguration(): array
     {
-        $appName = env('APP_NAME', basename(base_path()));
+        $appName = $this->getAppNameFromEnv();
+        $namespace = $this->option('namespace') ?: $this->getNamespaceFromEnv();
 
         return [
-            'namespace' => $this->option('namespace') ?: env('K8S_NAMESPACE', 'default'),
+            'namespace' => $namespace,
             'app_name' => $this->sanitizeKubernetesName($appName),
         ];
     }
@@ -397,5 +398,37 @@ class AckDeployCommand extends Command
         }
 
         return $sanitized;
+    }
+
+    private function getAppNameFromEnv(): string
+    {
+        // Check .env.ack file first
+        if (file_exists(base_path('.env.ack'))) {
+            $envContent = file_get_contents(base_path('.env.ack'));
+            if (preg_match('/^APP_NAME=(.+)$/m', $envContent, $matches)) {
+                $appName = trim($matches[1], '"\'');
+                if ($appName) {
+                    return $appName;
+                }
+            }
+        }
+
+        return env('APP_NAME', basename(base_path()));
+    }
+
+    private function getNamespaceFromEnv(): string
+    {
+        // Check .env.ack file first
+        if (file_exists(base_path('.env.ack'))) {
+            $envContent = file_get_contents(base_path('.env.ack'));
+            if (preg_match('/^K8S_NAMESPACE=(.+)$/m', $envContent, $matches)) {
+                $namespace = trim($matches[1], '"\'');
+                if ($namespace) {
+                    return $namespace;
+                }
+            }
+        }
+
+        return env('K8S_NAMESPACE', 'default');
     }
 }
