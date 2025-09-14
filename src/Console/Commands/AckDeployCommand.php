@@ -68,9 +68,12 @@ class AckDeployCommand extends Command
         $appName = $this->getAppNameFromEnv();
         $namespace = $this->option('namespace') ?: $this->getNamespaceFromEnv();
 
+        // Extract repository name from Docker image format (algethamy/test_ack -> test_ack)
+        $kubernetesName = $this->extractRepositoryName($appName);
+
         return [
             'namespace' => $namespace,
-            'app_name' => $this->sanitizeKubernetesName($appName),
+            'app_name' => $this->sanitizeKubernetesName($kubernetesName),
         ];
     }
 
@@ -518,5 +521,17 @@ class AckDeployCommand extends Command
         }
 
         return env('K8S_NAMESPACE', 'default');
+    }
+
+    private function extractRepositoryName(string $appName): string
+    {
+        // Handle Docker Hub format like "algethamy/test_ack" -> "test_ack"
+        if (str_contains($appName, '/')) {
+            $parts = explode('/', $appName);
+            return end($parts); // Get the last part (repository name)
+        }
+
+        // Return as-is if no username prefix
+        return $appName;
     }
 }
