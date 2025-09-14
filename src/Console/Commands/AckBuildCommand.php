@@ -46,15 +46,18 @@ class AckBuildCommand extends Command
     private function getConfiguration(): array
     {
         $registry = $this->option('registry') ?: $this->getRegistryFromEnv();
-        $appName = $this->getAppNameFromEnv(); // Keep original case for usernames
+        $appName = $this->getAppNameFromEnv();
         $tag = $this->option('tag');
 
+        // Sanitize app name for Docker/Kubernetes compatibility
+        $sanitizedAppName = $this->sanitizeDockerName($appName);
+
         // Format image name based on registry
-        $imageName = $this->formatImageName($registry, $appName, $tag);
+        $imageName = $this->formatImageName($registry, $sanitizedAppName, $tag);
 
         return [
             'registry' => $registry,
-            'app_name' => $appName,
+            'app_name' => $sanitizedAppName,
             'tag' => $tag,
             'image' => $imageName,
         ];
@@ -181,5 +184,23 @@ class AckBuildCommand extends Command
 
         // For other registries, use full format
         return "{$registry}/{$appName}:{$tag}";
+    }
+
+    private function sanitizeDockerName(string $name): string
+    {
+        // For Docker names, convert underscores to hyphens and ensure lowercase
+        $sanitized = strtolower($name);
+        $sanitized = str_replace('_', '-', $sanitized);
+
+        // Remove any characters that aren't alphanumeric, hyphens, or slashes (for usernames)
+        $sanitized = preg_replace('/[^a-z0-9-\/]/', '-', $sanitized);
+
+        // Clean up consecutive hyphens
+        $sanitized = preg_replace('/-+/', '-', $sanitized);
+
+        // Remove leading/trailing hyphens (but preserve slashes for Docker Hub usernames)
+        $sanitized = preg_replace('/^-+|-+$/', '', $sanitized);
+
+        return $sanitized ?: 'laravel-app';
     }
 }
